@@ -1,11 +1,11 @@
 #include "ConfigManager.hpp"
 #include "../helpers/Log.hpp"
 #include "../helpers/MiscFunctions.hpp"
-#include <hyprutils/path/Path.hpp>
 #include <filesystem>
 #include <glob.h>
 #include <cstring>
 #include <expected>
+#include <sstream>
 
 static std::expected<std::string, std::error_code> getMainConfigPath(const std::string& overridePath = "") {
     namespace fs = std::filesystem;
@@ -17,10 +17,34 @@ static std::expected<std::string, std::error_code> getMainConfigPath(const std::
         return overridePath;
     }
 
-    static const auto paths = Hyprutils::Path::findConfig("hypridle");
+    // Search order: $XDG_CONFIG_HOME/niri/, ~/.config/niri/, $XDG_CONFIG_DIRS/niri/, /etc/xdg/niri/
+    std::vector<std::string> searchDirs;
 
-    if (paths.first.has_value())
-        return paths.first.value();
+    const char* xdgHome = getenv("XDG_CONFIG_HOME");
+    if (xdgHome && *xdgHome)
+        searchDirs.push_back(std::string(xdgHome) + "/niri");
+    else {
+        const char* home = getenv("HOME");
+        if (home && *home)
+            searchDirs.push_back(std::string(home) + "/.config/niri");
+    }
+
+    const char* xdgDirs = getenv("XDG_CONFIG_DIRS");
+    if (xdgDirs && *xdgDirs) {
+        std::istringstream ss(xdgDirs);
+        std::string        dir;
+        while (std::getline(ss, dir, ':'))
+            searchDirs.push_back(dir + "/niri");
+    } else {
+        searchDirs.push_back("/etc/xdg/niri");
+    }
+
+    for (const auto& dir : searchDirs) {
+        auto candidate = dir + "/niriidle.conf";
+        std::error_code ec;
+        if (fs::exists(candidate, ec))
+            return candidate;
+    }
 
     return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
 }
@@ -71,6 +95,27 @@ void CConfigManager::init() {
     m_config.addConfigValue("general:ignore_systemd_inhibit", Hyprlang::INT{0});
     m_config.addConfigValue("general:ignore_wayland_inhibit", Hyprlang::INT{0});
     m_config.addConfigValue("general:inhibit_sleep", Hyprlang::INT{2});
+    m_config.addConfigValue("general:dpms_off_cmd", Hyprlang::STRING{"niri msg action power-off-monitors"});
+    m_config.addConfigValue("general:dpms_on_cmd", Hyprlang::STRING{"niri msg action power-on-monitors"});
+
+    // Enhanced state machine configs
+    m_config.addConfigValue("general:lid_close_action", Hyprlang::STRING{"lock_suspend"});
+    m_config.addConfigValue("general:lid_close_battery_action", Hyprlang::STRING{"lock_suspend"});
+    m_config.addConfigValue("general:lid_close_media_playing", Hyprlang::STRING{"lock_only"});
+    m_config.addConfigValue("general:lid_open_reset_idle", Hyprlang::INT{1});
+    m_config.addConfigValue("general:debounce_timeout", Hyprlang::INT{1500});
+
+    m_config.addConfigValue("general:unlocked_idle_battery", Hyprlang::INT{180});
+    m_config.addConfigValue("general:unlocked_idle_ac", Hyprlang::INT{900});
+
+    m_config.addConfigValue("general:locked_idle_battery", Hyprlang::INT{15});
+    m_config.addConfigValue("general:locked_suspend_battery", Hyprlang::INT{60});
+    m_config.addConfigValue("general:locked_idle_ac", Hyprlang::INT{30});
+    m_config.addConfigValue("general:locked_input_battery", Hyprlang::INT{10});
+    m_config.addConfigValue("general:locked_input_ac", Hyprlang::INT{30});
+
+    m_config.addConfigValue("general:hibernate_battery_pct", Hyprlang::INT{5});
+    m_config.addConfigValue("general:suspend_to_hibernate_timeout", Hyprlang::INT{14400});
 
     // track the file in the circular dependency chain
     alreadyIncludedSourceFiles.insert(std::filesystem::canonical(configHeadPath));

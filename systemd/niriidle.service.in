@@ -1,13 +1,12 @@
 [Unit]
-Description=Hyprland's idle daemon
-Documentation=https://wiki.hyprland.org/Hypr-Ecosystem/hypridle
+Description=niri idle daemon
 PartOf=graphical-session.target
 After=graphical-session.target
 ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=simple
-ExecStart=@CMAKE_INSTALL_PREFIX@/bin/hypridle
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/niriidle
 Restart=on-failure
 
 [Install]

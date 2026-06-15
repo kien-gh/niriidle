@@ -1,6 +1,6 @@
 
 #include "config/ConfigManager.hpp"
-#include "core/Hypridle.hpp"
+#include "core/Niriidle.hpp"
 #include "helpers/Log.hpp"
 #include <memory>
 
@@ -17,7 +17,7 @@ int main(int argc, char** argv, char** envp) {
             Debug::quiet = true;
 
         else if (arg == "--version" || arg == "-V") {
-            Debug::log(NONE, "hypridle v{}", HYPRIDLE_VERSION);
+            Debug::log(NONE, "niriidle v{}", NIRIIDLE_VERSION);
             return 0;
         }
 
@@ -33,7 +33,7 @@ int main(int argc, char** argv, char** envp) {
             }
 
             configPath = argv[++i];
-            if (configPath[0] == '-') { // Should be fine, because of the null terminator
+            if (configPath[0] == '-') {
                 Debug::log(NONE, "After " + arg + " you should provide a path to a config file.");
                 return 1;
             }
@@ -41,7 +41,7 @@ int main(int argc, char** argv, char** envp) {
 
         else if (arg == "--help" || arg == "-h") {
             Debug::log(NONE,
-                       "Usage: hypridle [options]\n"
+                       "Usage: niriidle [options]\n"
                        "Options:\n"
                        "  -v, --verbose       Enable verbose logging\n"
                        "  -q, --quiet         Suppress all output except errors\n"
@@ -58,18 +58,18 @@ int main(int argc, char** argv, char** envp) {
         if (!configPath.empty()) {
             Debug::log(CRIT, "ConfigManager: Specified file not found: {}\n", configPath);
         } else {
-            Debug::log(CRIT, "ConfigManager: No hypridle.conf file found in:");
-            Debug::log(NONE, "    $XDG_CONFIG_HOME/hypr/, ~/.config/hypr/, [XDG_CONFIG_DIRS]/hypr/, /etc/xdg/hypr/\n");
+            Debug::log(CRIT, "ConfigManager: No niriidle.conf file found in:");
+            Debug::log(NONE, "    $XDG_CONFIG_HOME/niri/, ~/.config/niri/, [XDG_CONFIG_DIRS]/niri/, /etc/xdg/niri/\n");
             Debug::log(NONE, "Create a config or specify one manually:");
-            Debug::log(NONE, "    hypridle -c /path/to/conf");
+            Debug::log(NONE, "    niriidle -c /path/to/conf");
         }
         return 1;
     }
 
     g_pConfigManager->init();
 
-    g_pHypridle = std::make_unique<CHypridle>();
-    g_pHypridle->run();
+    g_pNiriidle = std::make_unique<CNiriidle>();
+    g_pNiriidle->run();
 
     return 0;
 }

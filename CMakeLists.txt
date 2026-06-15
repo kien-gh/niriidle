@@ -4,21 +4,21 @@ file(READ "${CMAKE_SOURCE_DIR}/VERSION" VER_RAW)
 string(STRIP ${VER_RAW} VERSION)
 
 project(
-  hypridle
-  DESCRIPTION "An idle management daemon for Hyprland"
+  niriidle
+  DESCRIPTION "An idle management daemon for niri"
   VERSION ${VERSION})
 
 set(CMAKE_MESSAGE_LOG_LEVEL "STATUS")
 
 if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES DEBUG)
-  message(STATUS "Configuring hypridle in Debug with CMake")
+  message(STATUS "Configuring niriidle in Debug with CMake")
   add_compile_definitions(HYPRLAND_DEBUG)
 else()
   add_compile_options(-O3)
-  message(STATUS "Configuring hypridle in Release with CMake")
+  message(STATUS "Configuring niriidle in Release with CMake")
 endif()
 
-add_compile_definitions(HYPRIDLE_VERSION="${VERSION}")
+add_compile_definitions(NIRIIDLE_VERSION="${VERSION}")
 
 include_directories(. "protocols/")
 
@@ -29,7 +29,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 add_compile_options(-Wall -Wextra -Wuseless-cast -Wno-unused-parameter
                     -Wno-unused-value -Wno-missing-field-initializers)
-configure_file(systemd/hypridle.service.in systemd/hypridle.service @ONLY)
+configure_file(systemd/niriidle.service.in systemd/niriidle.service @ONLY)
 
 # dependencies
 message(STATUS "Checking deps...")
@@ -48,8 +48,8 @@ pkg_check_modules(
   sdbus-c++>=0.2.0)
 
 file(GLOB_RECURSE SRCFILES CONFIGURE_DEPENDS "src/*.cpp")
-add_executable(hypridle ${SRCFILES})
-target_link_libraries(hypridle PRIVATE rt Threads::Threads PkgConfig::deps)
+add_executable(niriidle ${SRCFILES})
+target_link_libraries(niriidle PRIVATE rt Threads::Threads PkgConfig::deps)
 
 # protocols
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
@@ -74,7 +74,7 @@ function(protocolnew protoPath protoName external)
     COMMAND hyprwayland-scanner --client ${path}/${protoName}.xml
             ${CMAKE_SOURCE_DIR}/protocols/
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-  target_sources(hypridle PRIVATE protocols/${protoName}.cpp
+  target_sources(niriidle PRIVATE protocols/${protoName}.cpp
                                    protocols/${protoName}.hpp)
 endfunction()
 function(protocolWayland)
@@ -84,10 +84,10 @@ function(protocolWayland)
     COMMAND hyprwayland-scanner --wayland-enums --client
             ${WAYLAND_SCANNER_PKGDATA_DIR}/wayland.xml ${CMAKE_SOURCE_DIR}/protocols/
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-  target_sources(hypridle PRIVATE protocols/wayland.cpp protocols/wayland.hpp)
+  target_sources(niriidle PRIVATE protocols/wayland.cpp protocols/wayland.hpp)
 endfunction()
 
-make_directory(${CMAKE_SOURCE_DIR}/protocols) # we don't ship any custom ones so
+make_directory(${CMAKE_SOURCE_DIR}/protocols)
 
 protocolwayland()
 
@@ -95,11 +95,11 @@ protocolnew("staging/ext-idle-notify" "ext-idle-notify-v1" false)
 protocolnew("${HYPRLAND_PROTOCOLS}/protocols" "hyprland-lock-notify-v1" true)
 
 # Installation
-install(TARGETS hypridle)
-install(FILES ${CMAKE_BINARY_DIR}/systemd/hypridle.service
+install(TARGETS niriidle)
+install(FILES ${CMAKE_BINARY_DIR}/systemd/niriidle.service
         DESTINATION "lib/systemd/user")
 
 install(
   FILES ${CMAKE_SOURCE_DIR}/assets/example.conf
-  DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/hypr
-  RENAME hypridle.conf)
+  DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/niriidle
+  RENAME niriidle.conf)
