@@ -1,6 +1,8 @@
 #include "Niriidle.hpp"
 #include "../helpers/Log.hpp"
 #include "../config/ConfigManager.hpp"
+
+static void spawn(const std::string& args);
 #include "csignal"
 #include <sys/wait.h>
 #include <sys/poll.h>
@@ -27,8 +29,10 @@ CNiriidle::CNiriidle() {
 
 // ── SIdleListenerGroup ─────────────────────────────────────────────────────
 
-void CNiriidle::SIdleListenerGroup::destroy() {
+void CNiriidle::SIdleListenerGroup::destroy(bool runRestores) {
     for (auto& l : listeners) {
+        if (runRestores && l.onTimeoutFired && !l.onRestore.empty())
+            spawn(l.onRestore);
         if (l.notification)
             l.notification->sendDestroy();
     }
@@ -574,14 +578,18 @@ void CNiriidle::handleLockedIdle(bool wakeFromInput) {
     // 1. Turn off screen after short timeout
     // 2. Suspend after another short timeout (on battery)
 
-    static const auto LOCKED_IDLE_BATTERY   = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_idle_battery");
+    static const auto DIM_CMD              = g_pConfigManager->getValue<Hyprlang::STRING>("general:dim_cmd");
+    static const auto DIM_RESUME_CMD       = g_pConfigManager->getValue<Hyprlang::STRING>("general:dim_resume_cmd");
+    static const auto LOCKED_DIM_BATTERY   = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_dim_battery");
+    static const auto LOCKED_DIM_AC        = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_dim_ac");
+    static const auto LOCKED_IDLE_BATTERY  = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_idle_battery");
     static const auto LOCKED_SUSPEND_BATTERY = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_suspend_battery");
-    static const auto LOCKED_IDLE_AC         = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_idle_ac");
-    static const auto LOCKED_INPUT_BATTERY   = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_input_battery");
-    static const auto LOCKED_INPUT_AC        = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_input_ac");
-    static const auto DPMSOFF                = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_off_cmd");
-    static const auto DPMSON                 = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_on_cmd");
-    static const auto SLEEPCMD               = g_pConfigManager->getValue<Hyprlang::STRING>("general:before_sleep_cmd");
+    static const auto LOCKED_IDLE_AC       = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_idle_ac");
+    static const auto LOCKED_INPUT_BATTERY = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_input_battery");
+    static const auto LOCKED_INPUT_AC      = g_pConfigManager->getValue<Hyprlang::INT>("general:locked_input_ac");
+    static const auto DPMSOFF              = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_off_cmd");
+    static const auto DPMSON               = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_on_cmd");
+    static const auto SLEEPCMD             = g_pConfigManager->getValue<Hyprlang::STRING>("general:before_sleep_cmd");
 
     if (!m_sWaylandIdleState.notifier || !m_sWaylandState.seat)
         return;
@@ -592,23 +600,22 @@ void CNiriidle::handleLockedIdle(bool wakeFromInput) {
 
     std::vector<std::pair<uint64_t, std::pair<std::string, std::string>>> timeouts;
 
-    // Determine screen-off timeout based on wake trigger
     uint64_t screenOffTimeout;
-    if (wakeFromInput) {
+    if (wakeFromInput)
         screenOffTimeout = onBattery ? (uint64_t)*LOCKED_INPUT_BATTERY : (uint64_t)*LOCKED_INPUT_AC;
-    } else {
+    else
         screenOffTimeout = onBattery ? (uint64_t)*LOCKED_IDLE_BATTERY : (uint64_t)*LOCKED_IDLE_AC;
-    }
 
-    // Screen off timeout
+    // Dim step before screen-off (optional — only if dim_cmd and locked_dim_* are set)
+    uint64_t dimTimeout = onBattery ? (uint64_t)*LOCKED_DIM_BATTERY : (uint64_t)*LOCKED_DIM_AC;
+    if (dimTimeout > 0 && !std::string{*DIM_CMD}.empty() && dimTimeout < screenOffTimeout)
+        timeouts.push_back({dimTimeout, {*DIM_CMD, *DIM_RESUME_CMD}});
+
     if (!std::string{*DPMSOFF}.empty())
         timeouts.push_back({screenOffTimeout, {*DPMSOFF, *DPMSON}});
 
-    // Suspend timeout (battery only) — additive on top of screenOffTimeout
-    if (onBattery && *LOCKED_SUSPEND_BATTERY > 0 && !std::string{*SLEEPCMD}.empty()) {
-        uint64_t suspendTimeout = screenOffTimeout + (uint64_t)*LOCKED_SUSPEND_BATTERY;
-        timeouts.push_back({suspendTimeout, {*SLEEPCMD, ""}});
-    }
+    if (onBattery && *LOCKED_SUSPEND_BATTERY > 0 && !std::string{*SLEEPCMD}.empty())
+        timeouts.push_back({screenOffTimeout + (uint64_t)*LOCKED_SUSPEND_BATTERY, {*SLEEPCMD, ""}});
 
     // ignoreInhibit=true: locked state must turn off screen regardless of media players or inhibitors
     m_sLockedGroup.create(m_sWaylandIdleState.notifier, m_sWaylandState.seat->resource(), *IGNOREWAYLANDINHIBIT, timeouts, true);
@@ -701,32 +708,41 @@ void CNiriidle::updateStateMachine() {
         handleLockedIdle(!m_bLastWakeFromLid); // lid open → wakeFromInput=false → longer timeout
     } else {
         // ── Group B: Unlocked Idle ─────────────────────────────────────────
-        static const auto UNLOCKED_IDLE_BATTERY = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_idle_battery");
-        static const auto UNLOCKED_IDLE_AC      = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_idle_ac");
-        static const auto LOCKCMD               = g_pConfigManager->getValue<Hyprlang::STRING>("general:lock_cmd");
-        static const auto SLEEPCMD              = g_pConfigManager->getValue<Hyprlang::STRING>("general:before_sleep_cmd");
-        static const auto DPMSOFF               = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_off_cmd");
-        static const auto DPMSON                = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_on_cmd");
+        static const auto DIM_CMD                  = g_pConfigManager->getValue<Hyprlang::STRING>("general:dim_cmd");
+        static const auto DIM_RESUME_CMD           = g_pConfigManager->getValue<Hyprlang::STRING>("general:dim_resume_cmd");
+        static const auto UNLOCKED_DIM_BATTERY     = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_dim_battery");
+        static const auto UNLOCKED_DIM_AC          = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_dim_ac");
+        static const auto UNLOCKED_IDLE_BATTERY    = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_idle_battery");
+        static const auto UNLOCKED_IDLE_AC         = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_idle_ac");
+        static const auto UNLOCKED_SCREEN_OFF_DELAY = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_screen_off_delay");
+        static const auto UNLOCKED_SUSPEND_DELAY   = g_pConfigManager->getValue<Hyprlang::INT>("general:unlocked_suspend_delay");
+        static const auto LOCKCMD                  = g_pConfigManager->getValue<Hyprlang::STRING>("general:lock_cmd");
+        static const auto SLEEPCMD                 = g_pConfigManager->getValue<Hyprlang::STRING>("general:before_sleep_cmd");
+        static const auto DPMSOFF                  = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_off_cmd");
+        static const auto DPMSON                   = g_pConfigManager->getValue<Hyprlang::STRING>("general:dpms_on_cmd");
 
-        bool     onBattery = m_sPowerSource == EPowerSource::BATTERY;
+        bool     onBattery   = m_sPowerSource == EPowerSource::BATTERY;
         uint64_t baseTimeout = onBattery ? (uint64_t)*UNLOCKED_IDLE_BATTERY : (uint64_t)*UNLOCKED_IDLE_AC;
 
         std::vector<std::pair<uint64_t, std::pair<std::string, std::string>>> timeouts;
 
         if (m_sMediaState == EMediaState::PLAYING) {
-            // Media playing: inhibit lock/suspend, only allow screen off after long timeout
             uint64_t mediaTimeout = onBattery ? 1800U : (baseTimeout * 2);
             mediaTimeout          = std::max(mediaTimeout, (uint64_t)900U);
             if (!std::string{*DPMSOFF}.empty())
                 timeouts.push_back({mediaTimeout, {*DPMSOFF, *DPMSON}});
         } else {
-            // Normal idle: lock → screen off → suspend
+            // Dim step before lock (optional)
+            uint64_t dimTimeout = onBattery ? (uint64_t)*UNLOCKED_DIM_BATTERY : (uint64_t)*UNLOCKED_DIM_AC;
+            if (dimTimeout > 0 && !std::string{*DIM_CMD}.empty() && dimTimeout < baseTimeout)
+                timeouts.push_back({dimTimeout, {*DIM_CMD, *DIM_RESUME_CMD}});
+
             if (!std::string{*LOCKCMD}.empty())
                 timeouts.push_back({baseTimeout, {*LOCKCMD, ""}});
             if (!std::string{*DPMSOFF}.empty())
-                timeouts.push_back({baseTimeout + 30, {*DPMSOFF, *DPMSON}});
+                timeouts.push_back({baseTimeout + (uint64_t)*UNLOCKED_SCREEN_OFF_DELAY, {*DPMSOFF, *DPMSON}});
             if (onBattery && !std::string{*SLEEPCMD}.empty())
-                timeouts.push_back({baseTimeout + 60, {*SLEEPCMD, ""}});
+                timeouts.push_back({baseTimeout + (uint64_t)*UNLOCKED_SCREEN_OFF_DELAY + (uint64_t)*UNLOCKED_SUSPEND_DELAY, {*SLEEPCMD, ""}});
         }
 
         m_sUnlockedGroup.create(m_sWaylandIdleState.notifier, m_sWaylandState.seat->resource(), *IGNOREWAYLANDINHIBIT, timeouts, false);

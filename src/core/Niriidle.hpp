@@ -39,7 +39,7 @@ class CNiriidle {
         std::vector<SIdleListener> listeners;
         bool                       active = false;
 
-        void destroy();
+        void destroy(bool runRestores = true);
         void create(SP<CCExtIdleNotifierV1> notifier, wl_proxy* seat, bool ignoreWaylandInhibit,
                     const std::vector<std::pair<uint64_t, std::pair<std::string, std::string>>>& timeouts, bool ignoreInhibit);
     };

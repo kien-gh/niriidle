@@ -105,9 +105,18 @@ void CConfigManager::init() {
     m_config.addConfigValue("general:lid_open_reset_idle", Hyprlang::INT{1});
     m_config.addConfigValue("general:debounce_timeout", Hyprlang::INT{1500});
 
+    m_config.addConfigValue("general:unlocked_dim_battery", Hyprlang::INT{0});
+    m_config.addConfigValue("general:unlocked_dim_ac", Hyprlang::INT{0});
     m_config.addConfigValue("general:unlocked_idle_battery", Hyprlang::INT{180});
     m_config.addConfigValue("general:unlocked_idle_ac", Hyprlang::INT{900});
+    m_config.addConfigValue("general:unlocked_screen_off_delay", Hyprlang::INT{30});
+    m_config.addConfigValue("general:unlocked_suspend_delay", Hyprlang::INT{60});
 
+    m_config.addConfigValue("general:dim_cmd", Hyprlang::STRING{""});
+    m_config.addConfigValue("general:dim_resume_cmd", Hyprlang::STRING{""});
+
+    m_config.addConfigValue("general:locked_dim_battery", Hyprlang::INT{0});
+    m_config.addConfigValue("general:locked_dim_ac", Hyprlang::INT{0});
     m_config.addConfigValue("general:locked_idle_battery", Hyprlang::INT{15});
     m_config.addConfigValue("general:locked_suspend_battery", Hyprlang::INT{60});
     m_config.addConfigValue("general:locked_idle_ac", Hyprlang::INT{30});
